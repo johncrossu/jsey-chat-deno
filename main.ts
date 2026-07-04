@@ -1,12 +1,22 @@
 const kv = await Deno.openKv();
 const ADMIN_SECRET = Deno.env.get("ADMIN_SECRET") || "";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "content-type, x-admin-secret",
+};
+
 function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json", ...CORS_HEADERS } });
 }
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
+
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
 
   if (url.pathname === "/message" && req.method === "POST") {
     const body = await req.json();
