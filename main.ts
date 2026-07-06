@@ -65,5 +65,16 @@ Deno.serve(async (req) => {
     return json(all);
   }
 
+  if (url.pathname === "/messages" && req.method === "DELETE") {
+    const secret = req.headers.get("x-admin-secret");
+    if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
+    let count = 0;
+    for await (const entry of kv.list({ prefix: ["threads"] })) {
+      await kv.delete(entry.key);
+      count++;
+    }
+    return json({ success: true, deleted: count });
+  }
+
   return json({ error: "Not found" }, 404);
 });
