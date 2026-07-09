@@ -136,9 +136,10 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     }
     if (thread) {
       thread.messages.push(msg);
+      thread.unread = true;
     } else {
       const id = crypto.randomUUID();
-      thread = { id, from: (body.name || "Anonymous").trim(), email: (body.email || "").trim(), time: Date.now(), messages: [msg] };
+      thread = { id, from: (body.name || "Anonymous").trim(), email: (body.email || "").trim(), time: Date.now(), messages: [msg], unread: true };
     }
     await setThread(thread.id, thread);
     if (attachment) await addStorageUsage(attachment.fileSize);
@@ -166,6 +167,7 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     const msg: any = { from: "admin", text: body.reply, time: Date.now() };
     if (attachment) { msg.attachment = attachment; await addStorageUsage(attachment.fileSize); }
     thread.messages.push(msg);
+    thread.unread = false;
     await setThread(thread.id, thread);
     return json({ success: true, email: thread.email });
   }
@@ -220,6 +222,17 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     }
     const dlUrl = await presignUrl(provider, key, "GET");
     return json({ url: dlUrl, expiresIn: 600 });
+  }
+
+  if (url.pathname === "/mark-read" && req.method === "POST") {
+    const secret = req.headers.get("x-admin-secret");
+    if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
+    const body = await req.json();
+    const thread = await getThread(body.id);
+    if (!thread) return json({ success: false }, 404);
+    thread.unread = false;
+    await setThread(thread.id, thread);
+    return json({ success: true });
   }
 
   return json({ error: "Not found" }, 404);
