@@ -137,13 +137,64 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     if (thread) {
       thread.messages.push(msg);
       thread.unread = true;
+      thread.lastCustomerMsgAt = Date.now();
     } else {
       const id = crypto.randomUUID();
-      thread = { id, from: (body.name || "Anonymous").trim(), email: (body.email || "").trim(), time: Date.now(), messages: [msg], unread: true };
+      thread = { id, from: (body.name || "Anonymous").trim(), email: (body.email || "").trim(), time: Date.now(), messages: [msg], unread: true, lastCustomerMsgAt: Date.now(), claimedBy: null, claimedAt: null };
     }
     await setThread(thread.id, thread);
     if (attachment) await addStorageUsage(attachment.fileSize);
     return json({ success: true, threadId: thread.id });
+  }
+
+  if (url.pathname === "/presence" && req.method === "POST") {
+    const secret = req.headers.get("x-admin-secret");
+    if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
+    const body = await req.json();
+    const email = (body.email || "").trim().toLowerCase();
+    if (!email) return json({ success: false }, 400);
+    await redisCmd("set", "presence:" + email, String(Date.now()), "EX", "40");
+    return json({ success: true });
+  }
+
+  if (url.pathname === "/presence" && req.method === "GET") {
+    const secret = req.headers.get("x-admin-secret");
+    if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
+    const emailsParam = url.searchParams.get("emails") || "";
+    const emails = emailsParam.split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+    const online: string[] = [];
+    for (const e of emails) {
+      const v = await redisCmd("get", "presence:" + e);
+      if (v) online.push(e);
+    }
+    return json({ online });
+  }
+
+  if (url.pathname === "/claim" && req.method === "POST") {
+    const secret = req.headers.get("x-admin-secret");
+    if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
+    const body = await req.json();
+    const thread = await getThread(body.id);
+    if (!thread) return json({ success: false }, 404);
+    if (thread.claimedBy && thread.claimedBy !== body.staffEmail && !body.force) {
+      return json({ success: false, claimedBy: thread.claimedBy });
+    }
+    thread.claimedBy = body.staffEmail;
+    thread.claimedAt = Date.now();
+    await setThread(thread.id, thread);
+    return json({ success: true });
+  }
+
+  if (url.pathname === "/unclaim" && req.method === "POST") {
+    const secret = req.headers.get("x-admin-secret");
+    if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
+    const body = await req.json();
+    const thread = await getThread(body.id);
+    if (!thread) return json({ success: false }, 404);
+    thread.claimedBy = null;
+    thread.claimedAt = null;
+    await setThread(thread.id, thread);
+    return json({ success: true });
   }
 
   if (url.pathname === "/thread" && req.method === "GET") {
