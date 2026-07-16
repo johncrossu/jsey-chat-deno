@@ -147,6 +147,30 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
 
   if (url.pathname === "/health") return json({ status: "ok" });
 
+  // ---- One-time migration: backfill IDs onto threads/messages created before the ID system existed ----
+  if (url.pathname === "/backfill-ids" && req.method === "POST") {
+    const secret = req.headers.get("x-admin-secret");
+    if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
+    const ids: string[] = (await redisCmd("smembers", "thread_index")) || [];
+    let threadsUpdated = 0;
+    let messagesUpdated = 0;
+    for (const id of ids) {
+      const thread = await getThread(id);
+      if (!thread) continue;
+      let changed = false;
+      if (!thread.customerId) { thread.customerId = await getOrCreateCustomerId(thread.email || ""); changed = true; }
+      if (!thread.convId) { thread.convId = genConvId(); changed = true; }
+      if (!thread.ticketRef) { thread.ticketRef = await genTicketRef(); changed = true; }
+      if (Array.isArray(thread.messages)) {
+        for (const m of thread.messages) {
+          if (!m.messageId) { m.messageId = genMessageId(); changed = true; messagesUpdated++; }
+        }
+      }
+      if (changed) { await setThread(id, thread); threadsUpdated++; }
+    }
+    return json({ success: true, threadsUpdated, messagesUpdated, totalThreads: ids.length });
+  }
+
   if (url.pathname === "/message" && req.method === "POST") {
     await maybeCleanup();
     const body = await req.json();
