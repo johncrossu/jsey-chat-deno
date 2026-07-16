@@ -46,6 +46,35 @@ async function setThread(id: string, thread: unknown) {
   await redisCmd("sadd", "thread_index", id);
 }
 
+function randHex(len: number): string {
+  const bytes = new Uint8Array(Math.ceil(len / 2));
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("").slice(0, len).toUpperCase();
+}
+function genCustomerId(): string { return "JCU-" + randHex(8); }
+function genConvId(): string {
+  const d = new Date();
+  const ds = d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+  return "JSC-" + ds + "-" + randHex(6);
+}
+function genMessageId(): string { return "MSG-" + randHex(12); }
+async function genTicketRef(): Promise<string> {
+  const d = new Date();
+  const ds = String(d.getFullYear()).slice(2) + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+  const n = await redisCmd("incr", "ticket_counter:" + ds);
+  return "JSEY-" + ds + "-" + String(n).padStart(4, "0");
+}
+async function getOrCreateCustomerId(email: string): Promise<string> {
+  if (!email) return genCustomerId();
+  const key = "customer_id:" + email.toLowerCase();
+  let id = await redisCmd("get", key);
+  if (!id) {
+    id = genCustomerId();
+    await redisCmd("set", key, id);
+  }
+  return id;
+}
+
 type Provider = "b2" | "r2";
 
 function endpointFor(p: Provider): string {
@@ -128,7 +157,7 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
       fileSize: Number(body.attachment.fileSize || 0), uploadedAt: Date.now(),
     } : null;
     if (!text && !attachment) return json({ success: false }, 400);
-    const msg: any = { from: "customer", text, time: Date.now() };
+    const msg: any = { from: "customer", text, time: Date.now(), messageId: genMessageId() };
     if (attachment) msg.attachment = attachment;
     let thread: any;
     if (body.threadId) {
@@ -140,7 +169,11 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
       thread.lastCustomerMsgAt = Date.now();
     } else {
       const id = crypto.randomUUID();
-      thread = { id, from: (body.name || "Anonymous").trim(), email: (body.email || "").trim(), time: Date.now(), messages: [msg], unread: true, lastCustomerMsgAt: Date.now(), claimedBy: null, claimedAt: null };
+      const emailTrim = (body.email || "").trim();
+      const customerId = await getOrCreateCustomerId(emailTrim);
+      const convId = genConvId();
+      const ticketRef = await genTicketRef();
+      thread = { id, customerId, convId, ticketRef, from: (body.name || "Anonymous").trim(), email: emailTrim, time: Date.now(), messages: [msg], unread: true, lastCustomerMsgAt: Date.now(), claimedBy: null, claimedAt: null };
     }
     await setThread(thread.id, thread);
     if (attachment) await addStorageUsage(attachment.fileSize);
@@ -215,7 +248,7 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
       fileName: String(body.attachment.fileName || "file"), fileType: String(body.attachment.fileType || "application/octet-stream"),
       fileSize: Number(body.attachment.fileSize || 0), uploadedAt: Date.now(),
     } : null;
-    const msg: any = { from: "admin", text: body.reply, time: Date.now() };
+    const msg: any = { from: "admin", text: body.reply, time: Date.now(), messageId: genMessageId() };
     if (body.staffDisplayName) msg.staffDisplayName = String(body.staffDisplayName).slice(0, 60);
     if (body.staffPhoto) msg.staffPhoto = String(body.staffPhoto).slice(0, 700000);
     if (attachment) { msg.attachment = attachment; await addStorageUsage(attachment.fileSize); }
