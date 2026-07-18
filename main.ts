@@ -197,7 +197,7 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
       const customerId = await getOrCreateCustomerId(emailTrim);
       const convId = genConvId();
       const ticketRef = await genTicketRef();
-      thread = { id, customerId, convId, ticketRef, from: (body.name || "Anonymous").trim(), email: emailTrim, time: Date.now(), messages: [msg], unread: true, lastCustomerMsgAt: Date.now(), claimedBy: null, claimedAt: null };
+      thread = { id, customerId, convId, ticketRef, from: (body.name || "Anonymous").trim(), email: emailTrim, time: Date.now(), messages: [msg], unread: true, lastCustomerMsgAt: Date.now(), claimedBy: null, claimedAt: null, status: "open", closedAt: null };
     }
     await setThread(thread.id, thread);
     if (attachment) await addStorageUsage(attachment.fileSize);
@@ -252,6 +252,44 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     thread.claimedAt = null;
     await setThread(thread.id, thread);
     return json({ success: true });
+  }
+
+  if (url.pathname === "/resolve" && req.method === "POST") {
+    const secret = req.headers.get("x-admin-secret");
+    if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
+    const body = await req.json();
+    const thread = await getThread(body.id);
+    if (!thread) return json({ success: false }, 404);
+    thread.status = "resolved";
+    await setThread(thread.id, thread);
+    return json({ success: true, thread });
+  }
+
+  if (url.pathname === "/close" && req.method === "POST") {
+    const secret = req.headers.get("x-admin-secret");
+    if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
+    const body = await req.json();
+    const thread = await getThread(body.id);
+    if (!thread) return json({ success: false }, 404);
+    if (thread.status !== "resolved") {
+      return json({ success: false, error: "must_resolve_first" }, 400);
+    }
+    thread.status = "closed";
+    thread.closedAt = Date.now();
+    await setThread(thread.id, thread);
+    return json({ success: true, thread });
+  }
+
+  if (url.pathname === "/reopen" && req.method === "POST") {
+    const secret = req.headers.get("x-admin-secret");
+    if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
+    const body = await req.json();
+    const thread = await getThread(body.id);
+    if (!thread) return json({ success: false }, 404);
+    thread.status = "open";
+    thread.closedAt = null;
+    await setThread(thread.id, thread);
+    return json({ success: true, thread });
   }
 
   if (url.pathname === "/thread" && req.method === "GET") {
