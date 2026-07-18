@@ -292,6 +292,20 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     return json({ success: true, thread });
   }
 
+  if (url.pathname === "/reassign" && req.method === "POST") {
+    const secret = req.headers.get("x-admin-secret");
+    if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
+    const body = await req.json();
+    const thread = await getThread(body.id);
+    if (!thread) return json({ success: false }, 404);
+    thread.claimedBy = body.newAgentEmail;
+    thread.claimedAt = Date.now();
+    thread.reassignedAt = Date.now();
+    thread.reassignedBy = body.byEmail || null;
+    await setThread(thread.id, thread);
+    return json({ success: true, thread });
+  }
+
   if (url.pathname === "/thread" && req.method === "GET") {
     const id = url.searchParams.get("id") || "";
     const thread = await getThread(id);
