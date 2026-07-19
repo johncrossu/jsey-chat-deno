@@ -308,6 +308,7 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     thread.reassignedAt = Date.now();
     thread.reassignedBy = body.byEmail || null;
     thread.pendingAcceptBy = body.newAgentEmail;
+    thread.awaitingOwnerReview = false;
     await setThread(thread.id, thread);
     return json({ success: true, thread });
   }
@@ -324,6 +325,20 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     return json({ success: true, thread });
   }
 
+  if (url.pathname === "/queue-release" && req.method === "POST") {
+    const secret = req.headers.get("x-admin-secret");
+    if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
+    const body = await req.json();
+    const thread = await getThread(body.id);
+    if (!thread) return json({ success: false }, 404);
+    thread.claimedBy = null;
+    thread.claimedAt = null;
+    thread.pendingAcceptBy = null;
+    thread.awaitingOwnerReview = false;
+    await setThread(thread.id, thread);
+    return json({ success: true, thread });
+  }
+
   if (url.pathname === "/reject-reassign" && req.method === "POST") {
     const secret = req.headers.get("x-admin-secret");
     if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
@@ -336,7 +351,8 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     thread.claimedBy = null;
     thread.claimedAt = null;
     thread.pendingAcceptBy = null;
-    thread.lastRejection = { by: rejectedBy, reason, at: Date.now() };
+    thread.awaitingOwnerReview = true;
+    thread.lastRejection = { by: rejectedBy, byName: body.rejectorName || rejectedBy, byId: body.rejectorId || "—", reason, at: Date.now() };
     await setThread(thread.id, thread);
     return json({ success: true, thread });
   }
