@@ -395,6 +395,7 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     const msg: any = { from: "admin", text: body.reply, time: Date.now(), messageId: genMessageId() };
     if (body.staffDisplayName) msg.staffDisplayName = String(body.staffDisplayName).slice(0, 60);
     if (body.staffPhoto) msg.staffPhoto = String(body.staffPhoto).slice(0, 700000);
+    if (body.staffGender) msg.staffGender = String(body.staffGender).slice(0, 20);
     if (attachment) { msg.attachment = attachment; await addStorageUsage(attachment.fileSize); }
     thread.messages.push(msg);
     thread.unread = false;
