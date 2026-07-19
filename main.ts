@@ -258,9 +258,14 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     const secret = req.headers.get("x-admin-secret");
     if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
     const body = await req.json();
+    const reason = (body.reason || "").trim();
+    if (!reason) return json({ success: false, error: "reason_required" }, 400);
     const thread = await getThread(body.id);
     if (!thread) return json({ success: false }, 404);
     thread.status = "resolved";
+    thread.resolvedReason = reason;
+    thread.resolvedBy = body.byEmail || null;
+    thread.resolvedAt = Date.now();
     await setThread(thread.id, thread);
     return json({ success: true, thread });
   }
