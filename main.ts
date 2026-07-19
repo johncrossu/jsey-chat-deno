@@ -309,6 +309,7 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     thread.reassignedBy = body.byEmail || null;
     thread.pendingAcceptBy = body.newAgentEmail;
     thread.awaitingOwnerReview = false;
+    thread.priorityQueue = false;
     await setThread(thread.id, thread);
     return json({ success: true, thread });
   }
@@ -335,6 +336,8 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     thread.claimedAt = null;
     thread.pendingAcceptBy = null;
     thread.awaitingOwnerReview = false;
+    thread.priorityQueue = true;
+    thread.queuedAt = Date.now();
     await setThread(thread.id, thread);
     return json({ success: true, thread });
   }
