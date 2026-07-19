@@ -281,6 +281,7 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     }
     thread.status = "closed";
     thread.closedAt = Date.now();
+    thread.closedBy = body.byEmail || null;
     await setThread(thread.id, thread);
     return json({ success: true, thread });
   }
@@ -289,10 +290,23 @@ Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (req) => {
     const secret = req.headers.get("x-admin-secret");
     if (secret !== ADMIN_SECRET) return json({ success: false }, 401);
     const body = await req.json();
+    const reason = (body.reason || "").trim();
+    if (!reason) return json({ success: false, error: "reason_required" }, 400);
     const thread = await getThread(body.id);
     if (!thread) return json({ success: false }, 404);
-    thread.status = "open";
+    thread.lastClose = {
+      closedAt: thread.closedAt || null,
+      closedBy: thread.closedBy || null,
+      resolvedBy: thread.resolvedBy || null,
+      resolvedReason: thread.resolvedReason || null,
+    };
+    thread.status = "reopened";
     thread.closedAt = null;
+    thread.claimedBy = body.byEmail || thread.claimedBy;
+    thread.claimedAt = Date.now();
+    thread.reopenedAt = Date.now();
+    thread.reopenedBy = body.byEmail || null;
+    thread.reopenReason = reason;
     await setThread(thread.id, thread);
     return json({ success: true, thread });
   }
